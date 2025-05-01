@@ -1,0 +1,109 @@
+---
+title: "STAT380 Final Project"
+author: "Jacob Gavin, Bryson Davis"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Load libraries
+library(readr)
+```
+
+```{r}
+# Import datasets
+games_p1 <- read.csv('./data/CODGames_p1_380.csv')
+games_p2 <- read.csv('./data/CODGames_p2_380.csv')
+gamemodes <- read.csv('./data/CODGameModes.csv')
+maps <- read.csv('./data/CODMaps.csv')
+
+```
+
+# Data Cleaning and Visualization (no GenAI)
+Relevant Information: (Complete without using Generative AI) Prior to each online match, players in the
+game lobby are presented with two options for the battlefield of the upcoming game (`Map1` and
+`Map2`). The players have the option to vote and the resulting vote is recorded in the `MapVote` column.
+The winning map is listed in the `Choice` column. In the event of a tie vote, the map listed in `Map1` is
+chosen. (Games for which the player entered the lobby after the vote has taken place have no information
+in `Map1` and `Map2` but have the winning map presented in `Choice`.)
+4
+Research Question: Which maps are the most likely to win the map vote when they are an option?
+Notes: To answer this question, write a paragraph (or more) discussing how you plan to answer this
+question. Be sure to address the data quality issues mentioned below and discuss how you will do the
+calculations. Then, write code and answer the question. (If I must answer questions about your
+approach/decision making process by reading your code rather than your discussion, you will lose points.)
+As part of your solution, you should calculate the proportion/probability that a map wins the vote given
+that it was a candidate. To do this, you will have to calculate the number times that each map was listed as
+a candidate (Map1 or Map2) and earned more votes than the other candidate. As part of this, you should
+consider whether a given map won the vote by getting more votes than the other option or if it was
+selected since it was `Map1` and the vote was a tie. You should also include a visualization of the results.
+There might be some data quality issues (such as misspelled map names and extra (trailing) blanks in
+some entries) to solve for this problem. You can find the proper names/spellings in the CODMaps.csv
+file. To full receive full credit, you must write code to solve these issues rather than editing the .csv files
+
+# Data Cleaning and Visualization (with GenAI)
+Repeat Task 1 using a generative AI of your choice. To answer this question, mention the tool (including
+version number if appropriate) you have selected. Then, discuss the prompt(s) you have used and provide
+the solution produced by the generative AI. While it is fine to paste the question into the generative AI as
+your first prompt, you should also use additional follow-up prompts if it is beneficial to do so. Be sure to
+discuss all prompts used in your report.
+Then, implement the generative AI solution.
+Finally, and most importantly, you should compare your solution from Task 1 to the generative AI
+solution. Discuss similarities/differences, strengths/weaknesses, etc., and provide an overall assessment of
+which solution is better. The discussion should consider the correctness of the answers and should be
+substantial. Demonstrate that you have given the comparison considerable thought by making at least 3
+substantial points as part of your comparison. Each point should take the form of a well-written
+paragraph.
+
+# Inference
+
+Relevant Information: There are a variety games types (GameType variable) within this dataset. The
+difference between the game types is that players have different objectives for the game. For instance, in
+the game type “Hardpoint”, teams earn points by capturing and defending a location. In “TDM” teams
+earn points by eliminating enemy opponents. As these game types have different objectives and may last
+for different amounts of time, the game type might affect the TotalXP earned.
+Research Question: How does the game type affect TotalXP after accounting for the Score?
+
+Notes: Score refers to the player’s score, not the “score” of the match (i.e., not the Result column). This
+answer requires some data wrangling that may require knowledge that we have not covered. (Again, part
+of the skillset you are working to develop is learning how to answer questions you have not seen
+previously.) In particular, there is no distinction between HC – TDM and TDM, no difference between
+HC – Hardpoint and Hardpoint, and so on for the other game types. Write code to clean the values in the
+GameType column to reflect this information. Then, perform an exploratory data analysis by create
+appropriate visualizations/summary statistics that explore the distribution of the variables and show the
+relationship between TotalXP, Score, and GameType. (You decide on the type/number of visualizations,
+but the analysis should be complete.) Finally, build an appropriate model for TotalXP based on Score and
+GameType. You should use the model to then answer the research question.
+
+
+
+# Prediction
+
+Relevant Information: In this task, your goal is to compare a variety of classification methods. In
+particular, you should write your own research question that can be answered by comparing the
+effectiveness of various classification methodologies. To demonstrate your understanding of these
+methods, you should implement two classification methods from class, one of which must be random
+forest, and a third method that we will not cover in class. (The purpose of the using a method we did not
+cover is I want you to practice learning about a method and its implementation on your own. Basically,
+find a tutorial that explains the method and how to implement it.) You will then have to compare the
+results and decide which method was the most effective.
+Research Question: Write your own question and be sure that the question and answer are clearly written
+in your report.
+Notes: Since you will be using random forest, do not use a decision/classification tree as one of your other
+methods. For this problem, you should provide a brief description of the methods that you will use. (A
+description is more than listing the name of the procedure. You should describe how the procedure
+works.) You will implement and compare the effectiveness of these methods. As part of this process, you
+will have to make a number of decisions such as whether you will do any data wrangling (maybe you
+remove partial matches, maybe you create new variables, etc.), which methods will you use, how will you
+fairly compare the results between methods, which method is best etc. All of these decisions should be
+included in your report. If I have to learn about your decisions/analysis by reading your code, you will
+lose points.
+
+
+
+
+
