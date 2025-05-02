@@ -1,7 +1,7 @@
 
 ---
 title: "STAT 380 – Mini‑Project 3 Solution (Individual)"
-author: "Taegwon Lee"
+author: "Taegwon Lee, Abhilash Katigiri"
 date: "2025-05-01"
 output:
   html_document:
