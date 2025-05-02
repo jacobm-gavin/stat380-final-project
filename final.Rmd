@@ -1,6 +1,6 @@
 ---
 title: "STAT380 Final Project"
-author: "Jacob Gavin, Bryson Davis, Abhilash Katigiri"
+author: "Jacob Gavin, Bryson Davis, Abhilash Katigiri, Taegwon Lee"
 date: "`r Sys.Date()`"
 output: html_document
 ---
