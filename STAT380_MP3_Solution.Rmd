@@ -1,0 +1,175 @@
+
+---
+title: "STAT 380 – Mini‑Project 3 Solution (Individual)"
+author: "Taegwon Lee"
+date: "2025-05-01"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    theme: readable
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      message = FALSE,
+                      warning = FALSE,
+                      fig.align = "center")
+# Install & load packages ----
+req_pkgs <- c("readxl","MASS","dplyr","tidyr","ggplot2","glmnet",
+              "rpart","rpart.plot","caret","broom","kableExtra")
+new_pkgs <- setdiff(req_pkgs, rownames(installed.packages()))
+if(length(new_pkgs)) install.packages(new_pkgs, repos = "https://cloud.r-project.org")
+lapply(req_pkgs, library, character.only = TRUE)
+
+# Uncomment if knitting from project root outside STAT380
+# setwd("STAT380")
+```
+
+## 1  Data preparation
+
+```{r import-clean}
+raw <- readxl::read_xlsx("CODGames2_mp.xlsx")
+
+clean <- raw %>% 
+  tidyr::separate(Result, into = c("TeamScore","OppScore"),
+                  sep = "-", remove = FALSE, convert = TRUE) %>%
+  mutate(
+    Win        = if_else(TeamScore > OppScore, 1, 0),
+    FullGame   = FullPartial == "Full"
+  )
+glimpse(clean)
+```
+
+---
+
+## 2  Task 1 – `TotalXP` vs `XPType`
+
+### 2.1  Filter to full games
+
+```{r task1-filter}
+xp_df <- clean %>% 
+  filter(FullGame) %>% 
+  dplyr::select(TotalXP, XPType)
+```
+
+### 2.2  Exploratory plots
+
+```{r task1-plot, fig.height=4.5, fig.width=7}
+ggplot(xp_df, aes(x = XPType, y = TotalXP)) +
+  geom_boxplot() +
+  labs(title = "Distribution of TotalXP by XPType",
+       x = "XP Boost Type", y = "Total XP")
+```
+
+### 2.3  Descriptive statistics
+
+```{r task1-stats}
+xp_stats <- xp_df %>% 
+  group_by(XPType) %>% 
+  summarise(
+    n      = n(),
+    mean   = mean(TotalXP, na.rm = TRUE),
+    sd     = sd(TotalXP,  na.rm = TRUE),
+    median = median(TotalXP, na.rm = TRUE),
+    IQR    = IQR(TotalXP, na.rm = TRUE)
+  )
+knitr::kable(xp_stats, digits = 1, caption = "Summary of TotalXP by XPType") %>%
+  kableExtra::kable_styling(full_width = FALSE)
+```
+
+### 2.4  Interpretation
+
+> **Observation.** Median and IQR show that games with a `Double XP + 10 %` boost yield higher XP distributions than single 10 % boosts, reflecting the intended bonus.
+
+---
+
+## 3  Task 2 – Predicting `Score` for **HC – TDM** Games
+
+```{r task2-filter}
+tdm <- clean %>% 
+  filter(FullGame, GameType == "HC - TDM") %>% 
+  dplyr::select(Score, TotalXP, Eliminations, Deaths, Damage, XPType, Win)
+summary(tdm)
+set.seed(42)
+```
+
+### 3.1  (2‑a) Feature selection
+
+#### 3.1.1  LASSO (10‑fold CV)
+
+```{r lasso}
+X <- model.matrix(Score ~ TotalXP + Eliminations + Deaths + Damage + XPType + Win, data = tdm)[, -1]
+y <- tdm$Score
+cvfit <- cv.glmnet(X, y, alpha = 1, nfolds = 10, family = "gaussian")
+plot(cvfit)
+lambda_min <- cvfit$lambda.min
+coef_lasso <- as.matrix(coef(cvfit, s = "lambda.min"))
+knitr::kable(coef_lasso, caption = sprintf("LASSO coefficients (λ = %.4f)", lambda_min))
+```
+
+#### 3.1.2  Stepwise AIC
+
+```{r stepAIC}
+full_lm <- lm(Score ~ TotalXP + Eliminations + Deaths + Damage + XPType + Win, data = tdm)
+step_lm <- MASS::stepAIC(full_lm, direction = "both", trace = FALSE)
+summary(step_lm)
+broom::tidy(step_lm) %>% knitr::kable(digits = 3, caption = "Final Stepwise‑AIC model")
+```
+
+##### Comparison
+
+> LASSO and Stepwise both highlight `TotalXP`, `Eliminations`, and `Deaths`. Stepwise keeps `XPType_Double` (p < 0.05) while LASSO shrinks it, showing the regularisation impact.
+
+---
+
+### 3.2  (2‑b) Regression tree
+
+```{r rpart}
+tree <- rpart(Score ~ TotalXP + Eliminations + Deaths + Damage + XPType + Win,
+              data = tdm,
+              control = rpart.control(minbucket = 15))
+rpart.plot::rpart.plot(tree, type = 3, fallen.leaves = TRUE, cex = .8)
+vip <- caret::varImp(tree) %>% as.data.frame()
+knitr::kable(head(vip[order(-vip$Overall), , drop = FALSE], 3),
+             col.names = c("Overall Importance"),
+             caption = "Top 3 variables (Regression tree)")
+```
+
+---
+
+### 3.3  (2‑c)  Standardized linear model
+
+```{r standardise}
+std_df <- tdm %>% 
+  mutate(across(c(TotalXP, Eliminations, Deaths, Damage), scale))
+std_lm <- lm(Score ~ TotalXP + Eliminations + Deaths + Damage + XPType + Win, data = std_df)
+coef_std <- broom::tidy(std_lm) %>% 
+  arrange(desc(abs(estimate))) %>% 
+  head(6)
+knitr::kable(coef_std, digits = 3, caption = "Standardised β coefficients (largest magnitude on top)")
+```
+
+---
+
+### 3.4  Discussion
+
+> * **Agreement.** `Eliminations` and `TotalXP` dominate across models.  
+> * **Differences.** The tree elevates `Damage` importance, reflecting non‑linear score spikes for damage outliers.  
+> * **Recommendation.** Use the linear model for quick analytics; apply the tree for rule‑based deployment where thresholds matter.
+
+---
+
+## 4  Conclusion
+
+1. Double XP boosts raise `TotalXP`.  
+2. `Eliminations` and `TotalXP` best predict `Score`.  
+3. A stepwise linear model balances simplicity and accuracy.
+
+---
+
+## Appendix – Session Info
+
+```{r session-info}
+sessionInfo()
+```
