@@ -9,9 +9,11 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r}
+```{r, message=FALSE}
 # Load libraries
 library(readr)
+library(dplyr)
+library(ggplot2)
 ```
 
 ```{r}
@@ -36,14 +38,214 @@ Notes: To answer this question, write a paragraph (or more) discussing how you p
 question. Be sure to address the data quality issues mentioned below and discuss how you will do the
 calculations. Then, write code and answer the question. (If I must answer questions about your
 approach/decision making process by reading your code rather than your discussion, you will lose points.)
+
+
 As part of your solution, you should calculate the proportion/probability that a map wins the vote given
-that it was a candidate. To do this, you will have to calculate the number times that each map was listed as
+that it was a candidate. 
+To do this, you will have to calculate the number times that each map was listed as
 a candidate (Map1 or Map2) and earned more votes than the other candidate. As part of this, you should
 consider whether a given map won the vote by getting more votes than the other option or if it was
 selected since it was `Map1` and the vote was a tie. You should also include a visualization of the results.
 There might be some data quality issues (such as misspelled map names and extra (trailing) blanks in
 some entries) to solve for this problem. You can find the proper names/spellings in the CODMaps.csv
-file. To full receive full credit, you must write code to solve these issues rather than editing the .csv files
+file. To full receive full credit, you must write code to solve these issues rather than editing the .csv files.
+
+## Approach
+To answer the research question, we will first need to clean the data in the `Map1`, `Map2`, and `Choice` columns of the dataset. This includes removing any trailing spaces and correcting any misspellings by cross-referencing with the `CODMaps.csv` file.
+
+Once the data cleaning is complete, we will create a new dataframe, consisting 
+of the `Map1`, `Map2`, and `Choice` columns from both datasets.
+We will then calculate the number of times each map was listed as a candidate 
+(either in `Map1` or `Map2`) and how many times it won the vote.
+
+
+Finally, we will calculate the proportion of wins for each map and create a visualization to show the results.
+
+```{r}
+# Clean the Map1, Map2, and Choice columns
+games_p1$Map1 <- trimws(games_p1$Map1)
+games_p1$Map2 <- trimws(games_p1$Map2)
+games_p1$Choice <- trimws(games_p1$Choice)
+games_p2$Map1 <- trimws(games_p2$Map1)
+games_p2$Map2 <- trimws(games_p2$Map2)
+games_p2$Choice <- trimws(games_p2$Choice)
+
+# Combine the two datasets
+games_combined <- rbind(games_p1, games_p2)
+
+# fix leading and trailing whitespaces of maps
+games_combined$Map1 <- gsub("\\s+", " ", games_combined$Map1)
+games_combined$Map2 <- gsub("\\s+", " ", games_combined$Map2)
+games_combined$Choice <- gsub("\\s+", " ", games_combined$Choice)
+# remove leading whitespace
+games_combined$Map1 <- gsub("^\\s+", "", games_combined$Map1)
+games_combined$Map2 <- gsub("^\\s+", "", games_combined$Map2)
+games_combined$Choice <- gsub("^\\s+", "", games_combined$Choice)
+
+
+# replace empty strings with NA
+games_combined$Map1[games_combined$Map1 == ""] <- NA
+games_combined$Map2[games_combined$Map2 == ""] <- NA
+games_combined$Choice[games_combined$Choice == ""] <- NA
+
+# remove rows where `Choice` is NA
+games_combined <- games_combined[!is.na(games_combined$Choice), ]
+
+# create a new dataframe with the correct map names
+map_names <- unique(c(games_combined$Map1, games_combined$Map2, games_combined$Choice))
+map_names <- map_names[map_names != ""]
+map_names <- map_names[!is.na(map_names)]
+map_names <- unique(map_names)
+
+
+# check each map1, map2, and choice, and ensure that they exist in correct_map_names.
+incorrect_map1 <- setdiff(games_combined$Map1, map_names)
+incorrect_map2 <- setdiff(games_combined$Map2, map_names)
+incorrect_choice <- setdiff(games_combined$Choice, map_names)
+
+```
+
+Now that we've completed the general data cleaning, We move on to correcting 
+misspelled map names. There may be a more elegant way to do this with automatic 
+spell checking, but for the purposes of this finite data set, we can brute-force 
+approach the misspellings. We will use the `gsub` function to replace the incorrect
+spellings with the correct ones. We will also remove any leading or trailing spaces
+from the map names.
+
+```{r}
+
+
+games_combined$Map1 <- gsub("Ruah", "Rush", games_combined$Map1)
+games_combined$Map1 <- gsub("Riad", "Raid", games_combined$Map1)
+games_combined$Map1 <- gsub("Striek", "Strike", games_combined$Map1)
+games_combined$Map1 <- gsub("Stirke", "Strike", games_combined$Map1)
+games_combined$Map1 <- gsub("Collaterol Strike", "Collateral Strike", games_combined$Map1)
+games_combined$Map1 <- gsub("Deprogam", "Deprogram", games_combined$Map1)
+games_combined$Map1 <- gsub("^Collateral$", "Collateral Strike", games_combined$Map1)
+games_combined$Map1 <- gsub("Drive-in", "Drive-In", games_combined$Map1)
+
+games_combined$Map2 <- gsub("Miami Stirke", "Miami Strike", games_combined$Map2)
+games_combined$Map2 <- gsub("^Collateral$", "Collateral Strike", games_combined$Map2)
+games_combined$Map2 <- gsub("Drive-in", "Drive-In", games_combined$Map2)
+games_combined$Map2 <- gsub("yamantau", "Yamantau", games_combined$Map2)
+games_combined$Map2 <- gsub("Miami Sstrike", "Miami Strike", games_combined$Map2)
+games_combined$Map2 <- gsub("Amrada Strike", "Armada Strike", games_combined$Map2)
+games_combined$Map2 <- gsub("Nuketown '84 Halloween", "Nuketown '84 Halloween", games_combined$Map2)
+
+
+games_combined$Choice <- gsub("^Collateral$", "Collateral Strike", games_combined$Choice)
+games_combined$Choice <- gsub("APocalypse", "Apocalypse", games_combined$Choice)
+games_combined$Choice <- gsub("Apocolypse", "Apocalypse", games_combined$Choice)
+games_combined$Choice <- gsub("Drive-in", "Drive-In", games_combined$Choice)
+games_combined$Choice <- gsub("Collaterel Strike", "Collateral Strike", games_combined$Choice)
+games_combined$Choice <- gsub("Deisel", "Diesel", games_combined$Choice)
+```
+
+Now that we've corrected spellings, we are going to verify that the maps are correct.
+Ideally, the output of this block will only be the NA values, which we will deal 
+with in a later step.
+
+```{r}
+# Verify that the maps are correct
+incorrect_map1 <- setdiff(games_combined$Map1, map_names)
+incorrect_map2 <- setdiff(games_combined$Map2, map_names)
+incorrect_choice <- setdiff(games_combined$Choice, map_names)
+print(paste("Incorrect Map1 names:", paste(incorrect_map1, collapse = "|")))
+print(paste("Incorrect Map2 names:", paste(incorrect_map2, collapse = "|")))
+print(paste("Incorrect Choice names:", paste(incorrect_choice, collapse = "|")))
+```
+
+
+
+Through use of gsub, we corrected the spellings of maps that were recorded
+incorrectly in the dataset. We also removed leading and trailing spaces from the
+map names.
+
+Becuase of the phrasing of the question, "To do this, you will have to calculate the number times that each map was listed as a candidate (Map1 or Map2) and earned more votes than the other candidate. As part of this, you should consider whether a given map won the vote by getting more votes than the other option or if it was selected since it was Map1 and the vote was a tie.",  We can assume that if the player joined the match late and Map1 and Map2 are NA, we should not use this data, as it is impossible to determine what was the 
+losing map.
+
+Next we need to convert the formatting of MapVote to be either a tie which we 
+will denote as 0, or a win which we will denote as 1. because there are never 
+more than 9 people voting, the votes will be single digits.
+We will extract the first character of the MapVote column and the last character
+If the characters are equal, we can conclude that it was a tie.
+```{r}
+# First, we create a new dataframe with the Map1, Map2, MapVote, and Choice columns
+map_votes <- games_combined %>%
+  select(Map1, Map2, MapVote, Choice)
+
+# Next, we will remove any rows where Map1 or Map2 are NA, as mentioned previously.
+map_votes <- map_votes %>%
+  filter(!is.na(Map1) & !is.na(Map2))
+
+# check first and last character, to determine if it was a tie.
+map_votes <- map_votes %>%
+  mutate(MapVote = ifelse(substr(MapVote, 1, 1) == substr(MapVote, nchar(MapVote), nchar(MapVote)), 0, 1))
+
+# Now that we have identified all the ties, we can remove them from the dataset
+map_votes <- map_votes %>%
+  filter(MapVote == 1)
+
+# we will use a hash map to count how many times each map was listed as a candidate,
+# as well as how many times it won the vote
+map_counts <- data.frame(Map = unique(c(map_votes$Map1, map_votes$Map2)), Count = 0)
+
+# add another empty column to the map_counts dataframe to count the number of times each map wins the vote
+map_counts <- map_counts %>%
+  mutate(WinCount = 0)
+# Now we will iterate through the map_votes data frame and count how many times each map was listed in Map1 
+
+
+for (i in 1:nrow(map_votes)) {
+  map1 <- map_votes$Map1[i]
+  map2 <- map_votes$Map2[i]
+  # increment the counts for map1 and map2
+  map_counts[map_counts$Map == map1, "Count"] <- map_counts[map_counts$Map == map1, "Count"] + 1
+  map_counts[map_counts$Map == map2, "Count"] <- map_counts[map_counts$Map == map2, "Count"] + 1
+}
+
+# Now, go through and update WinCount for each time a map wins the vote
+for (i in 1:nrow(map_votes)) {
+  map1 <- map_votes$Map1[i]
+  map2 <- map_votes$Map2[i]
+  choice <- map_votes$Choice[i]
+  # if the choice is map1, increment the win count for map1
+  if (choice == map1) {
+    map_counts[map_counts$Map == map1, "WinCount"] <- map_counts[map_counts$Map == map1, "WinCount"] + 1
+  } else  if (choice == map2) {
+    # otherwise, increment the win count for map2
+    map_counts[map_counts$Map == map2, "WinCount"] <- map_counts[map_counts$Map == map2, "WinCount"] + 1
+  }
+  else{
+    # if the choice is neither map1 nor map2, print all 3 values for debugging
+    # Ideally, this line will never execute
+    print(paste("Map1:", map1, "Map2:", map2, "Choice:", choice))
+  }
+}
+
+# Now that we have the counts, we can calculate the proportion of wins for each map
+map_counts <- map_counts %>%
+  mutate(Proportion = WinCount / Count)
+# Now we can create a bar plot to visualize the results
+# We will plot this data in ascending order
+map_counts <- map_counts %>%
+  arrange(Proportion)
+# Create a bar plot of the results
+ggplot(map_counts, aes(x = reorder(Map, Proportion), y = Proportion)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(title = "Proportion of Wins for Each Map", x = "Map", y = "Proportion of Wins") +
+  theme_minimal()
+```
+
+
+With this, we have successfully cleaned the data, and calculated the proportion of wins for each map.
+
+The only notable outlier is "Nuketown '84 Halloween". This map was only listed as 
+an option once, and won the vote. This would not be considered statistically significant,
+as the sample size is one. Based on the name, this was likely a limited time map,
+possibly only available on halloween, which would explain both why it only appeared 
+as an option once, as well as why it won the vote (not many chances to play this map.)
 
 # Data Cleaning and Visualization (with GenAI)
 Repeat Task 1 using a generative AI of your choice. To answer this question, mention the tool (including
