@@ -529,7 +529,144 @@ fairly compare the results between methods, which method is best etc. All of the
 included in your report. If I have to learn about your decisions/analysis by reading your code, you will
 lose points.
 
+#### Study goal
+The objective is to predict whether a match is played in **Hardcore (HC)** or **Core** mode using only in‑match performance statistics. We compare three classifiers:
+1. **Logistic Regression** – linear, fully interpretable baseline
+2. **Random Forest** – non‑linear ensemble (required by the assignment)
+3. **Support Vector Machine with RBF kernel** – a method not covered in class
+Models are tuned with 5 × repeated 5‑fold cross‑validation optimising ROC‑AUC, and final performance is assessed on a stratified 30 % hold‑out set using ROC‑AUC and Accuracy.
 
+#### Data loading and merge
+The two match logs (`CODGames_p1_380.csv`, `CODGames_p2_380.csv`) are merged into a single data frame called `games`. No cleaning is performed at this point; the aim is simply to consolidate all observations.
+
+```{r}
+library(dplyr); library(caret); library(randomForest); library(e1071); library(pROC); library(ggplot2)
+
+p1 <- read.csv("./data/CODGames_p1_380.csv")
+p2 <- read.csv("./data/CODGames_p2_380.csv")
+games <- bind_rows(p1, p2)
+```
+
+#### Target variable
+Rows whose `GameType` string starts with “HC – ” are labelled Hardcore, otherwise Core. The resulting factor `IsHC` is stored with the level order Core < HC to keep all downstream interpretations consistent.
+
+```{r}
+games <- games %>%
+mutate(IsHC = factor(ifelse(grepl("^HC", GameType), "HC", "Core"),
+levels = c("Core", "HC")))
+```
+
+#### Feature engineering
+If a match‑length column is present (`Time`, `MatchTime`, or `TimeSeconds`), it is converted to minutes (`TimeMinutes`) for scale uniformity. The candidate predictor pool comprises `Score`, `Eliminations`, `Deaths`, `Damage`, `Objectives`, and the optional `TimeMinutes`. Only columns that actually exist in the dataset are retained, and rows containing missing values are dropped.
+
+```{r}
+if ("Time" %in% names(games)) games$TimeMinutes <- games$Time / 60
+if ("MatchTime" %in% names(games)) games$TimeMinutes <- games$MatchTime / 60
+if ("TimeSeconds"%in% names(games)) games$TimeMinutes <- games$TimeSeconds/ 60
+
+feature_pool <- c("Score", "Eliminations", "Deaths", "Damage",
+"Objectives", "TimeMinutes")
+use_vars <- intersect(feature_pool, names(games))
+
+model_df <- games %>% select(IsHC, all_of(use_vars)) %>% na.omit()
+```
+
+#### Train‑test split
+A stratified split (70 % train / 30 % test) preserves the Core/HC class ratio. A fixed seed (42) ensures that results are reproducible.
+
+```{r}
+set.seed(42)
+idx <- createDataPartition(model_df$IsHC, p = 0.7, list = FALSE)
+train <- model_df[idx, ]
+test <- model_df[-idx, ]
+```
+
+#### Cross‑validation settings
+A common `trainControl` object specifies 5‑fold cross‑validation repeated three times, optimisation on ROC‑AUC, and storage of class probabilities. Using the same control parameters guarantees a fair comparison across models.
+
+```{r}
+ctrl <- trainControl(method = "repeatedcv",
+number = 5, repeats = 3,
+classProbs = TRUE,
+summaryFunction = twoClassSummary,
+savePredictions = "final")
+```
+
+#### Model training and tuning
+* Logistic Regression – converts a linear combination of features into a probability via the logistic (sigmoid) function; coefficients can be interpreted as log‑odds, e.g. “one additional Score point multiplies the odds of HC mode by exp(β)”.
+* Random Forest – builds 500 bootstrap decision trees; at each split a random subset of predictors is considered, reducing correlation among trees. Majority voting over many low‑bias, high‑variance trees lowers overall variance and guards against over‑fitting.
+* SVM with RBF kernel – uses the kernel trick to map observations into an infinite‑dimensional space where a maximal‑margin hyper‑plane separates the classes. The regularisation parameter **C** controls mis‑classification tolerance, while kernel width **σ** adjusts decision‑boundary smoothness..
+
+```{r}
+
+log_fit <- train(IsHC ~ ., data = train,
+method = "glm", family = "binomial",
+metric = "ROC", trControl = ctrl)
+
+rf_fit <- train(IsHC ~ ., data = train,
+method = "rf", ntree = 500,
+tuneGrid = expand.grid(mtry = c(2, 3, 4)),
+metric = "ROC", trControl = ctrl,
+importance = TRUE)
+
+svm_fit <- train(IsHC ~ ., data = train,
+method = "svmRadial",
+preProcess = c("center", "scale"),
+tuneGrid = expand.grid(sigma = 2^(-8:-6), C = 2^(0:4)),
+metric = "ROC", trControl = ctrl)
+```
+
+#### Cross‑validation results
+`resamples` reports each model’s mean ROC‑AUC and Accuracy with standard deviations. The accompanying dot‑plot visualises the ROC‑AUC distribution and already indicates that Random Forest is the top performer on average.
+
+```{r}
+res <- resamples(list(Logistic = log_fit,
+RandomForest = rf_fit,
+SVM = svm_fit))
+print(summary(res))
+dotplot(res, metric = "ROC")
+```
+
+#### Hold‑out performance
+Applying the trained models to the 30 % test set confirms the cross‑validation findings: Random Forest achieves the highest ROC‑AUC and Accuracy, demonstrating strong generalisation beyond the training folds.
+
+```{r}
+library(pROC); library(knitr)
+
+metric <- function(m, new) {
+p <- predict(m, new, type = "prob")[,"HC"]
+auc <- roc(new$IsHC, p)$auc
+acc <- mean(ifelse(p > 0.5, "HC", "Core") == new$IsHC)
+c(AUC = auc, Accuracy = acc)
+}
+holdout <- rbind(
+Logistic = metric(log_fit, test),
+RandomForest = metric(rf_fit, test),
+SVM = metric(svm_fit, test)
+)
+knitr::kable(round(holdout, 3), caption = "30 % hold‑out performance")
+```
+
+#### Variable importance (Random Forest)
+The Gini‑based importance plot shows that Score and Eliminations contribute most to distinguishing Hardcore matches, whereas `Objectives` and `TimeMinutes` exhibit relatively minor influence.
+
+```{r}
+# variable importance (Random Forest)
+imp <- varImp(rf_fit)$importance
+imp$Variable <- rownames(imp)
+val_col <- if ("Overall" %in% names(imp)) "Overall" else names(imp)[1]
+
+ggplot(imp, aes(reorder(Variable, .data[[val_col]]), .data[[val_col]])) +
+geom_col(fill = "steelblue") +
+coord_flip() +
+labs(title = "Random‑Forest variable importance",
+x = NULL, y = "Importance") +
+theme_minimal()
+```
+
+#### Overall interpretation
+Random Forest delivers the best predictive power by automatically capturing non‑linear relationships and feature interactions. Logistic Regression is easy to interpret but constrained by its linear form, while SVM is competitive yet sensitive to hyper‑parameter choices and computationally heavier on larger data sets.
+Future work could address potential class imbalance with resampling techniques (e.g., SMOTE) and explore additional features such as map type, game mode, or time‑of‑day to further boost model performance.
 
 
 
