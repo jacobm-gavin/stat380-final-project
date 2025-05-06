@@ -14,6 +14,12 @@ knitr::opts_chunk$set(echo = TRUE)
 library(readr)
 library(dplyr)
 library(ggplot2)
+library(stringr)
+library(caret)
+library(randomForest)
+library(e1071)
+library(pROC)
+library(knitr)
 ```
 
 ```{r}
@@ -260,6 +266,109 @@ which solution is better. The discussion should consider the correctness of the 
 substantial. Demonstrate that you have given the comparison considerable thought by making at least 3
 substantial points as part of your comparison. Each point should take the form of a well-written
 paragraph.
+
+
+```{r}
+p1 <- games_p1
+p2 <- games_p2
+
+# Load required libraries
+
+
+# Combine datasets
+combined <- bind_rows(p1, p2)
+
+# Clean whitespace from Map1, Map2, Choice
+combined <- combined %>%
+  mutate(
+    Map1 = str_trim(Map1),
+    Map2 = str_trim(Map2),
+    Choice = str_trim(Choice)
+  )
+
+# Get official map names
+official_maps <- str_trim(maps$Name)
+
+# Filter out rows with no map voting (joined after vote)
+combined <- combined %>%
+  filter(!(is.na(Map1) & is.na(Map2)))
+
+# Create a table of how many times each map appeared
+map_appearances <- official_maps %>%
+  setNames(official_maps) %>%
+  lapply(function(map) {
+    sum(combined$Map1 == map | combined$Map2 == map, na.rm = TRUE)
+  }) %>%
+  unlist()
+
+# Create a table of how many times each map won
+map_wins <- official_maps %>%
+  setNames(official_maps) %>%
+  lapply(function(map) {
+    sum(combined$Choice == map, na.rm = TRUE)
+  }) %>%
+  unlist()
+
+# Combine into a dataframe
+map_stats <- data.frame(
+  Map = names(map_appearances),
+  Appearances = as.numeric(map_appearances),
+  Wins = as.numeric(map_wins)
+) %>%
+  mutate(WinRate = Wins / Appearances)
+
+# Plot the results
+ggplot(map_stats, aes(x = reorder(Map, -WinRate), y = WinRate)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(
+    title = "Map Win Rates",
+    x = "Map",
+    y = "Win Rate"
+  ) +
+  theme_minimal() +
+  coord_flip()
+```
+
+### Which Solution had better accuracy?
+
+When I compared my solution to the one made by Jacob in part one, the biggest difference I noticed was
+accuracy. His approach took more time because he was careful with every step. He checked things
+thoroughly, like making sure maps matched properly and dealing with missing data correctly.
+The AI’s solution was quicker and shorter, but it missed some important details, like carelessly
+removing missing data, which could mess up results later on. Even though it might have been
+easier to read, the AI skipped over crucial checks that keep the analysis accurate. So, Jacob's
+ended up being more trustworthy because it handled these details better.
+
+
+### Which solution was more reliable?
+
+Another difference was how reliable each solution was. Jacob's method was really detailed and
+thorough. He explained each step clearly, making sure anyone who used his code could
+understand exactly what he did and why. That way, if there were any problems, it would be easier
+to fix them. The AI solution looked clean and simple, but it wasn’t as detailed. It used a
+one-size-fits-all approach, so it might not work as well with different kinds of data or new
+problems that might pop up. Basically, his was stronger in situations where you really need to
+trust the results.
+
+
+### Which solution was easier to use?
+
+This answer gets to the heart of the GenAI debate when used for coding. The AI is obviously easier to use at first glance.
+Sonnet 3.7, which is highly revered as a good coding model, is able to take in LOADS of context and use it's training data
+to write code that often times works very well. The issue that it faces is the nuance of the task. This task required many things, 
+such as cleaning the data and fixing spelling mistakes, as well as organizing the data, performing calculations, and plotting it. 
+Something like fixing the spelling mistakes takes more than a one-shot approach, and by the time you have the AI fix all of the mistakes, 
+it would have been quicker to do it by hand.
+
+My belief is that using GenAI sacrifices long-term maintainability of code for short-term ease of use. While you can very simply get things 
+up and running with GenAI, ensuring that you are doing things correctly, and ensuring that your code is understandable and maintainable, is a task 
+best suited for a human coder.
+
+
+
+
+
+
 
 # Inference
 
@@ -540,7 +649,6 @@ Models are tuned with 5 × repeated 5‑fold cross‑validation optimising ROC�
 The two match logs (`CODGames_p1_380.csv`, `CODGames_p2_380.csv`) are merged into a single data frame called `games`. No cleaning is performed at this point; the aim is simply to consolidate all observations.
 
 ```{r}
-library(dplyr); library(caret); library(randomForest); library(e1071); library(pROC); library(ggplot2)
 
 p1 <- read.csv("./data/CODGames_p1_380.csv")
 p2 <- read.csv("./data/CODGames_p2_380.csv")
@@ -631,7 +739,6 @@ dotplot(res, metric = "ROC")
 Applying the trained models to the 30 % test set confirms the cross‑validation findings: Random Forest achieves the highest ROC‑AUC and Accuracy, demonstrating strong generalisation beyond the training folds.
 
 ```{r}
-library(pROC); library(knitr)
 
 metric <- function(m, new) {
 p <- predict(m, new, type = "prob")[,"HC"]
