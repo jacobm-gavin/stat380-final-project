@@ -281,6 +281,230 @@ relationship between TotalXP, Score, and GameType. (You decide on the type/numbe
 but the analysis should be complete.) Finally, build an appropriate model for TotalXP based on Score and
 GameType. You should use the model to then answer the research question.
 
+#Approach 
+
+First, let's join our datasets and clean the GameType column:
+
+```{r}
+# joins the datasets
+games_combined <- rbind(games_p1, games_p2)
+
+# Cleans the GameType column by removing "HC - "
+games_combined$GameType <- gsub("HC - ", "", games_combined$GameType)
+
+# Checks the unique game types
+unique_game_types <- unique(games_combined$GameType)
+print(unique_game_types)
+
+# Remove rows with missing values 
+inference_data <- games_combined %>%
+  filter(!is.na(GameType) & !is.na(TotalXP) & !is.na(Score))
+
+# Summary of the stats by game type
+summary_stats <- inference_data %>%
+  group_by(GameType) %>%
+  summarize(
+    Count = n(),
+    Mean_Score = mean(Score),
+    Mean_TotalXP = mean(TotalXP),
+    Median_Score = median(Score),
+    Median_TotalXP = median(TotalXP),
+    SD_Score = sd(Score),
+    SD_TotalXP = sd(TotalXP)
+  ) %>%
+  arrange(desc(Mean_TotalXP))
+
+print(summary_stats)
+
+# Distribution of TotalXP by game type
+ggplot(inference_data, aes(x = TotalXP)) +
+  geom_histogram(bins = 30, fill = "steelblue", alpha = 0.7) +
+  facet_wrap(~ GameType, scales = "free_y") +
+  labs(title = "Distribution of TotalXP by Game Type",
+       x = "Total XP",
+       y = "Count") +
+  theme_minimal()
+
+# Distribution of Score by game type
+ggplot(inference_data, aes(x = Score)) +
+  geom_histogram(bins = 30, fill = "darkgreen", alpha = 0.7) +
+  facet_wrap(~ GameType, scales = "free_y") +
+  labs(title = "Distribution of Score by Game Type",
+       x = "Score",
+       y = "Count") +
+  theme_minimal()
+
+# Boxplots of TotalXP by GameType
+ggplot(inference_data, aes(x = reorder(GameType, TotalXP, FUN = median), y = TotalXP)) +
+  geom_boxplot(fill = "lightblue") +
+  coord_flip() +
+  labs(title = "TotalXP by Game Type",
+       x = "Game Type",
+       y = "Total XP") +
+  theme_minimal()
+
+#  Score and TotalXP by GameType
+ggplot(inference_data, aes(x = Score, y = TotalXP, color = GameType)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(title = "Relationship between Score and TotalXP by Game Type",
+       x = "Score",
+       y = "Total XP") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+# For better visualization, individual plots for the top game types
+top_game_types <- names(sort(table(inference_data$GameType), decreasing = TRUE)[1:4])
+
+ggplot(inference_data %>% filter(GameType %in% top_game_types), 
+       aes(x = Score, y = TotalXP)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = TRUE, color = "red") +
+  facet_wrap(~ GameType) +
+  labs(title = "Score vs TotalXP for Most Common Game Types",
+       x = "Score",
+       y = "Total XP") +
+  theme_minimal()
+```
+
+We can see different patterns:
+
+Different game types show different amounts of TotalXP, some game types have higher XP than others.
+There is a positive correlation between Score and TotalXP in all game types.
+The slope of the relationship between Score and TotalXP is different by game type.
+Some game types have a higher baseline TotalXP with no connection to Score.
+
+
+Let's build and compare two models:
+
+A model with main effects and a model with interaction effects
+
+```{r}
+# Model with main effects
+main_effects_model <- lm(TotalXP ~ Score + GameType, data = inference_data)
+summary_main <- summary(main_effects_model)
+print(summary_main)
+
+# Model with interaction effects
+interaction_model <- lm(TotalXP ~ Score * GameType, data = inference_data)
+summary_interaction <- summary(interaction_model)
+print(summary_interaction)
+
+# Comparing
+anova_result <- anova(main_effects_model, interaction_model)
+print(anova_result)
+
+# see which model is better from the ANOVA test
+if (anova_result$`Pr(>F)`[2] < 0.05) {
+  final_model <- interaction_model
+  print("The interaction model is better than the main effects model.")
+} else {
+  final_model <- main_effects_model
+  print("There is no improvement with the interaction model over the main effects model.")
+}
+
+# Check model
+par(mfrow = c(2, 2))
+plot(final_model)
+
+#prediction data
+pred_data <- expand.grid(
+  Score = seq(min(inference_data$Score), max(inference_data$Score), length.out = 100),
+  GameType = unique(inference_data$GameType)
+)
+
+# predictions
+pred_data$PredictedXP <- predict(final_model, newdata = pred_data)
+
+# Plot the model
+ggplot() +
+  geom_point(data = inference_data, aes(x = Score, y = TotalXP, color = GameType), alpha = 0.3) +
+  geom_line(data = pred_data, aes(x = Score, y = PredictedXP, color = GameType), size = 1) +
+  labs(title = "Model Predictions of TotalXP by Score and Game Type",
+       x = "Score",
+       y = "Total XP") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+#predictions for the top game types
+ggplot() +
+  geom_point(data = inference_data %>% filter(GameType %in% top_game_types), 
+             aes(x = Score, y = TotalXP, color = GameType), alpha = 0.3) +
+  geom_line(data = pred_data %>% filter(GameType %in% top_game_types), 
+            aes(x = Score, y = PredictedXP, color = GameType), size = 1) +
+  facet_wrap(~ GameType) +
+  labs(title = "Model Predictions for Top Game Types",
+       x = "Score",
+       y = "Total XP") +
+  theme_minimal()
+
+#GameType effects
+if (identical(final_model, main_effects_model)) {
+  # For main effects model, extract GameType coefficients
+  coefs <- coef(final_model)
+  game_effects <- data.frame(
+    GameType = names(coefs)[-c(1:2)],
+    Effect = as.numeric(coefs[-c(1:2)])
+  )
+  game_effects$GameType <- gsub("GameType", "", game_effects$GameType)
+  
+  # reference level with effect = 0
+  ref_level <- setdiff(unique(inference_data$GameType), game_effects$GameType)
+  game_effects <- rbind(game_effects, data.frame(GameType = ref_level, Effect = 0))
+  
+  #GameType effects
+  ggplot(game_effects, aes(x = reorder(GameType, Effect), y = Effect)) +
+    geom_bar(stat = "identity", fill = "steelblue") +
+    coord_flip() +
+    labs(title = "Effect of Game Type on TotalXP (After Controlling for Score)",
+         x = "Game Type",
+         y = "Effect on TotalXP") +
+    theme_minimal()
+} else {
+
+  #effects at specific Score values
+  score_levels <- c(
+    min(inference_data$Score),
+    median(inference_data$Score),
+    max(inference_data$Score)
+  )
+  
+  for (score_val in score_levels) {
+    pred_at_score <- predict(final_model, 
+                             newdata = data.frame(Score = score_val, 
+                                                 GameType = unique(inference_data$GameType)))
+    score_effects <- data.frame(
+      GameType = unique(inference_data$GameType),
+      Effect = pred_at_score - pred_at_score[1]  # Reference to first game type
+    )
+    
+    print(paste("Game Type Effects at Score =", score_val))
+    print(score_effects)
+    
+    # Plot
+    ggplot(score_effects, aes(x = reorder(GameType, Effect), y = Effect)) +
+      geom_bar(stat = "identity", fill = "steelblue") +
+      coord_flip() +
+      labs(title = paste("Effect of Game Type on TotalXP at Score =", score_val),
+           x = "Game Type",
+           y = "Effect on TotalXP (relative to reference)") +
+      theme_minimal()
+  }
+}
+```
+
+
+
+The type of game you play changes how much TotalXP you earn. Each game mode has a different XP rate, and some give you more XP per Score point than others. According to the data, Domination gives the highest XP per point, next is Hardpoint, Kill Confirmed, and Team Deathmatch gives the lowest.
+
+
+The statistical model (TotalXP ~ Score * GameType) showed that game types change how Score turns into XP. This model beat a simpler one (TotalXP ~ Score + GameType) with a p-value of 0.0000329, showing it’s reliable. It also explained 35.7% of TotalXP differences (R² = 0.3568).
+
+XP Rates by Game Type, Domination gives the Highest XP per Score point (steepest slope). Hardpoint has the Second-highest XP rate. Kill Confirmed is Middle of the pack. TDM is the Lowest XP per point (flattest slope).
+
+
+Compared to Domination, TDM: -3.182 (p = 0.07961, almost significant). Kill Confirmed: -2.412 (p = 0.26344). 
+Hardpoint: -1.752 (p = 0.33680).
 
 
 # Prediction
